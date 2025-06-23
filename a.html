@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>首の姿勢警告</title>
+  <style>
+    body {
+      font-size: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      text-align: center;
+    }
+    #startBtn {
+      font-size: 28px;
+      padding: 16px 32px;
+      margin: 10px;
+    }
+    video, canvas {
+      width: 640px;
+      height: 360px;
+      transform: scaleX(-1);
+      border: 1px solid #ccc;
+    }
+    #warning {
+      font-size: 40px;
+      font-weight: bold;
+      margin-top: 16px;
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <h1>首の姿勢モニタ</h1>
+  <button id="startBtn">測定開始</button>
+  <div>
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+  <p id="warning">測定を開始してください</p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const warning = document.getElementById('warning');
+    const startBtn = document.getElementById('startBtn');
+
+    let currentPitch = null;
+    let currentRoll = null;
+    let postureStatus = null;
+
+    function handleOrientation(event) {
+      currentPitch = event.beta;
+      currentRoll = event.gamma;
+    }
+
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMesh.onResults(results => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+      if (!currentPitch) return;
+
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        const nose = landmarks[1];
+        const chin = landmarks[152];
+
+        const yDiff = chin.y - nose.y;
+        let faceDirection = "";
+
+        // 顔の向き（3段階）
+        if (yDiff > 0.06) {
+          faceDirection = "down";
+        } else if (yDiff < 0.03) {
+          faceDirection = "up";
+        } else {
+          faceDirection = "straight";
+        }
+
+        // 判定ロジック
+        let message = "";
+        if (currentPitch <= 40) {
+          if (faceDirection === "down" || faceDirection === "straight") {
+            message = "⚠️ 首が曲がっています（スマホが垂直）";
+          } else {
+            message = "✅ 首は曲がっていません（上を向いています）";
+          }
+        } else {
+          if (faceDirection === "down") {
+            message = "⚠️ 首が曲がっています（スマホが水平）";
+          } else {
+            message = "✅ 首は曲がっていません";
+          }
+        }
+
+        // ランドマーク強調（鼻：緑、顎：青）
+        ctx.beginPath();
+        ctx.arc(nose.x * canvas.width, nose.y * canvas.height, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'green';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(chin.x * canvas.width, chin.y * canvas.height, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'blue';
+        ctx.fill();
+
+        warning.textContent = message;
+      } else {
+        warning.textContent = "顔が検出できません";
+      }
+    });
+
+    async function startAll() {
+      // 傾きセンサ
+      if (
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function'
+      ) {
+        try {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation);
+          } else {
+            warning.textContent = 'センサー利用が許可されませんでした';
+            return;
+          }
+        } catch {
+          warning.textContent = 'センサー利用エラー';
+          return;
+        }
+      } else {
+        window.addEventListener('deviceorientation', handleOrientation);
+      }
+
+      // カメラ起動
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      video.addEventListener('loadedmetadata', () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      });
+
+      const camera = new Camera(video, {
+        onFrame: async () => {
+          await faceMesh.send({ image: video });
+        },
+        width: 640,
+        height: 360
+      });
+      camera.start();
+
+      warning.textContent = "測定中...";
+      startBtn.style.display = "none";
+    }
+
+    startBtn.onclick = startAll;
+  </script>
+</body>
+</html>
