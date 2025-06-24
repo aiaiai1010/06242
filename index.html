@@ -51,7 +51,7 @@
   </style>
 </head>
 <body>
-  <h1>傾き + 顔検出1</h1>
+  <h1>傾き + 顔検出</h1>
   <button id="startBtn">測定開始</button>
   <p id="output">読み取り中...</p>
   <div id="warning">測定待機中</div>
@@ -137,7 +137,7 @@
           if (yDiff < 0.13) {
             postureText = "下を向いています";
             faceDirection = "down";
-          } else if (yDiff > 0.21) {
+          } else if (yDiff > 0.19) {
             postureText = "上を向いています";
             faceDirection = "up";
           } else {
